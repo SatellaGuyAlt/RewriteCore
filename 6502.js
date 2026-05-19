@@ -1,4 +1,4 @@
-// NES 6502 CPU Emulator (Basic Implementation)
+// NES 6502 CPU Emulator with ROM Loading Support
 // Author: Copilot
 
 // Registers and Flags: 
@@ -33,6 +33,25 @@ class CPU6502 {
         this.reset();
     }
 
+    loadROM(rom) {
+        // Parse the iNES header (first 16 bytes)
+        if (rom[0] !== 0x4E || rom[1] !== 0x45 || rom[2] !== 0x53 || rom[3] !== 0x1A) {
+            throw new Error('Invalid iNES header');
+        }
+
+        const prgSize = rom[4] * 16384; // 16KB units
+        const chrSize = rom[5] * 8192;  // 8KB units
+
+        // Load PRG ROM into memory (0x8000-0xFFFF)
+        const prgROM = rom.slice(16, 16 + prgSize);
+        this.loadProgram(prgROM, 0x8000);
+
+        console.log('PRG ROM loaded:', prgSize, 'bytes');
+        if (chrSize > 0) {
+            console.log('CHR ROM size:', chrSize, 'bytes');
+        }
+    }
+
     fetch() {
         return this.memory[this.PC++];
     }
@@ -64,46 +83,5 @@ class CPU6502 {
     }
 }
 
-// PPU (Picture Processing Unit) Implementation
-class PPU {
-    constructor() {
-        this.vram = new Uint8Array(0x4000); // VRAM (Video RAM)
-        this.oam = new Uint8Array(256);     // Object Attribute Memory (Sprites)
-        this.registers = {
-            PPUCTRL: 0x00,   // Control Register
-            PPUMASK: 0x00,   // Mask Register
-            PPUSTATUS: 0xA0, // Status Register
-            OAMADDR: 0x00,   // OAM Address
-            OAMDATA: 0x00,   // OAM Data
-            PPUSCROLL: 0x00, // Scroll Position
-            PPUADDR: 0x00,   // Address Register
-            PPUDATA: 0x00    // Data Register
-        };
-    }
-
-    renderScanline(scanline) {
-        // Simulated rendering of a scanline
-    }
-
-    step() {
-        // PPU rendering cycle logic (placeholder)
-    }
-}
-
-// Example usage
-const cpu = new CPU6502();
-const ppu = new PPU();
-const program = new Uint8Array([0xA9, 0x01, 0x00]); // LDA #$01; BRK
-cpu.loadProgram(program);
-
-while (true) {
-    try {
-        cpu.step();
-        ppu.step();
-    } catch (e) {
-        console.log('Program completed.');
-        break;
-    }
-}
-
-module.exports = { CPU6502, PPU };
+// Export the CPU class
+module.exports = CPU6502;
