@@ -3,86 +3,436 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NES Emulator</title>
+    <title>NES Emulator - RewriteCore</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #222;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #4CAF50;
+        }
+
         canvas {
-            border: 1px solid black;
+            border: 3px solid #333;
             display: block;
             margin: 20px auto;
+            background: #000;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            width: 512px;
+            height: 480px;
+        }
+
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            margin: 10px 5px;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .file-input-label:hover {
+            background: #45a049;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin: 10px 5px;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #0b7dda;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        #status {
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            background: #333;
+            border-radius: 4px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        #status.error {
+            color: #ff6b6b;
+        }
+
+        #status.loading {
+            color: #FFC107;
+        }
+
+        #stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+            font-size: 12px;
+        }
+
+        .stat-box {
+            background: #333;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+        }
+
+        .stat-label {
+            color: #aaa;
+            font-size: 11px;
+        }
+
+        .stat-value {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        #romName {
+            text-align: center;
+            color: #aaa;
+            font-size: 14px;
+            margin: 10px 0;
         }
     </style>
 </head>
 <body>
-    <h1 style="text-align: center;">NES Emulator</h1>
-    <canvas id="screen" width="256" height="240"></canvas>
-    <div style="text-align: center;">
-        <input type="file" id="romFile" accept=".nes">
-        <button id="loadButton">Load ROM</button>
-        <p id="status">Status: Waiting for ROM...</p>
+    <div class="container">
+        <h1>🎮 NES Emulator - RewriteCore</h1>
+        
+        <canvas id="screen" width="256" height="240"></canvas>
+        
+        <div class="controls">
+            <div class="file-input-wrapper">
+                <input type="file" id="romFile" accept=".nes" />
+                <label for="romFile" class="file-input-label">📁 Select ROM</label>
+            </div>
+            <button id="loadButton">Load & Start</button>
+            <button id="pauseButton" disabled>⏸ Pause</button>
+            <button id="resetButton" disabled>🔄 Reset</button>
+        </div>
+
+        <div id="romName"></div>
+        <div id="status">Status: Waiting for ROM...</div>
+        
+        <div id="stats">
+            <div class="stat-box">
+                <div class="stat-label">CPU Cycles</div>
+                <div class="stat-value" id="cycles">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Scanline</div>
+                <div class="stat-value" id="scanline">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Frame Count</div>
+                <div class="stat-value" id="frames">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">FPS</div>
+                <div class="stat-value" id="fps">0</div>
+            </div>
+        </div>
     </div>
 
     <script type="module">
-        import { CPU6502, PPU } from './6502.js';
+        // Import CPU and PPU from 6502.js
+        const { CPU6502, PPU } = await import('./6502.js');
 
+        // DOM Elements
         const canvas = document.getElementById('screen');
-        const context = canvas.getContext('2d');
-        const imageData = context.getImageData(0, 0, 256, 240);
-        const pixels = new Uint32Array(imageData.data.buffer);
+        const context = canvas.getContext('2d', { willReadFrequently: true });
         const status = document.getElementById('status');
+        const romNameDiv = document.getElementById('romName');
+        const loadButton = document.getElementById('loadButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const resetButton = document.getElementById('resetButton');
+        const romFileInput = document.getElementById('romFile');
 
-        const cpu = new CPU6502();
-        const ppu = new PPU();
+        // Stats
+        let frameCount = 0;
+        let lastFpsTime = Date.now();
+        let cpuCycles = 0;
+
+        // Emulator state
+        let cpu = new CPU6502();
+        let ppu = new PPU();
+        let running = false;
+        let paused = false;
+        let romLoaded = false;
+        let currentRomData = null;
+
+        // Create image data for faster rendering
+        const imageData = context.createImageData(256, 240);
+        const pixels = new Uint32Array(imageData.data.buffer);
+
+        // NES Color Palette (NTSC)
+        const nespalette = [
+            0xFF7C7C7C, 0xFF0000FC, 0xFF0000BC, 0xFF4428BC,
+            0xFF940084, 0xFFA80020, 0xFFA81000, 0xFF881400,
+            0xFF500800, 0xFF007800, 0xFF006800, 0xFF005800,
+            0xFF004058, 0xFF000000, 0xFF000000, 0xFF000000,
+            0xFFBCBCBC, 0xFF0078F8, 0xFF0088F8, 0xFF8878F8,
+            0xFFC800C8, 0xFFF80084, 0xFFF8A000, 0xFFF8B800,
+            0xFFB88830, 0xFF009800, 0xFF00B800, 0xFF00A844,
+            0xFF008888, 0xFF000000, 0xFF000000, 0xFF000000,
+            0xFFFCFCFC, 0xFF38F8F8, 0xFF58F8F8, 0xFF7C88F8,
+            0xFFC8B8F8, 0xFFF878F8, 0xFFF8A878, 0xFFF8C858,
+            0xFFF8D878, 0xFFB8F818, 0xFF78D800, 0xFF58F898,
+            0xFF44F8B8, 0xFF888888, 0xFF000000, 0xFF000000,
+            0xFFFCFCFC, 0xFFA4E4FC, 0xFFB8B8F8, 0xFFD8B8F8,
+            0xFFF8B8F8, 0xFFF8A4C0, 0xFFF0D0B0, 0xFFFCE0B8,
+            0xFFFCF0D8, 0xFFF4F8B8, 0xFFE0F8A0, 0xFFA8F0BA,
+            0xFFB0F0D8, 0xFFFFFFFF, 0xFF000000, 0xFF000000
+        ];
+
+        function setStatus(message, isError = false, isLoading = false) {
+            status.textContent = message;
+            status.classList.remove('error', 'loading');
+            if (isError) status.classList.add('error');
+            if (isLoading) status.classList.add('loading');
+        }
+
+        function updateStats() {
+            document.getElementById('cycles').textContent = cpuCycles.toLocaleString();
+            document.getElementById('scanline').textContent = ppu.scanline;
+            document.getElementById('frames').textContent = frameCount;
+
+            const now = Date.now();
+            if (now - lastFpsTime >= 1000) {
+                const fps = (frameCount * 1000) / (now - lastFpsTime);
+                document.getElementById('fps').textContent = fps.toFixed(1);
+                frameCount = 0;
+                lastFpsTime = now;
+            }
+        }
 
         function renderScreen() {
-            for (let y = 0; y < 240; y++) {
+            // For now, render a test pattern based on PPU state
+            // In a full implementation, this would render based on PPU VRAM/OAM
+            for (let i = 0; i < pixels.length; i++) {
+                // Simple test: show palette data
+                const paletteIndex = (ppu.paletteRam[i % 32]) & 0x3F;
+                pixels[i] = nespalette[paletteIndex];
+            }
+
+            // Add scanline indicator
+            if (ppu.scanline < 240) {
                 for (let x = 0; x < 256; x++) {
-                    const color = 0xFF000000; // Black for now, replace with actual PPU output
-                    pixels[y * 256 + x] = color;
+                    pixels[ppu.scanline * 256 + x] = 0xFFFFFFFF;
                 }
             }
+
             context.putImageData(imageData, 0, 0);
         }
 
-        document.getElementById('loadButton').addEventListener('click', () => {
-            const fileInput = document.getElementById('romFile');
-            const file = fileInput.files[0];
+        function emulateCycle() {
+            if (!running || paused) return;
 
-            if (!file) {
-                alert('Please select a ROM file.');
+            try {
+                // Execute one CPU cycle
+                cpu.step();
+                cpuCycles++;
+
+                // PPU runs 3x faster than CPU
+                ppu.step();
+                ppu.step();
+                ppu.step();
+
+                // Render when we complete a frame
+                if (ppu.cycle === 0 && ppu.scanline === 0) {
+                    renderScreen();
+                    frameCount++;
+                    updateStats();
+                }
+
+                requestAnimationFrame(emulateCycle);
+            } catch (e) {
+                console.error('Emulation error:', e);
+                setStatus(`Emulation Error: ${e.message}`, true);
+                running = false;
+                pauseButton.disabled = true;
+                resetButton.disabled = true;
+            }
+        }
+
+        function startEmulation() {
+            if (!romLoaded) {
+                setStatus('Error: No ROM loaded!', true);
                 return;
             }
+
+            running = true;
+            paused = false;
+            cpuCycles = 0;
+            frameCount = 0;
+            lastFpsTime = Date.now();
+
+            loadButton.disabled = true;
+            pauseButton.disabled = false;
+            resetButton.disabled = false;
+            romFileInput.disabled = true;
+
+            setStatus('🎮 Emulation Running...', false, true);
+            emulateCycle();
+        }
+
+        function pauseEmulation() {
+            paused = !paused;
+            pauseButton.textContent = paused ? '▶ Resume' : '⏸ Pause';
+            setStatus(paused ? 'Paused' : '🎮 Emulation Running...', false, !paused);
+        }
+
+        function resetEmulation() {
+            if (currentRomData) {
+                running = false;
+                paused = false;
+                cpu = new CPU6502();
+                ppu = new PPU();
+                cpuCycles = 0;
+                frameCount = 0;
+
+                try {
+                    cpu.loadROM(currentRomData);
+                    startEmulation();
+                } catch (e) {
+                    console.error('Failed to reset:', e);
+                    setStatus(`Reset Error: ${e.message}`, true);
+                }
+            }
+        }
+
+        loadButton.addEventListener('click', () => {
+            const file = romFileInput.files[0];
+
+            if (!file) {
+                setStatus('Error: Please select a ROM file!', true);
+                return;
+            }
+
+            if (!file.name.toLowerCase().endsWith('.nes')) {
+                setStatus('Error: Please select a valid .nes ROM file!', true);
+                return;
+            }
+
+            setStatus('Loading ROM...', false, true);
+            romNameDiv.textContent = `ROM: ${file.name}`;
 
             const reader = new FileReader();
             reader.onload = () => {
                 try {
-                    const romData = new Uint8Array(reader.result);
-                    cpu.loadROM(romData);
-                    status.textContent = 'Status: ROM loaded successfully! Starting emulation...';
-
-                    console.log('ROM loaded, starting emulation.');
-
-                    function emulateFrame() {
-                        try {
-                            for (let i = 0; i < 29781; i++) { // ~29780 cycles per frame
-                                cpu.step();
-                                ppu.step();
-                            }
-                            renderScreen();
-                            requestAnimationFrame(emulateFrame);
-                        } catch (e) {
-                            console.error('Emulation error:', e);
-                            status.textContent = 'Status: Emulation error! Check console for details.';
-                        }
+                    currentRomData = new Uint8Array(reader.result);
+                    
+                    // Validate iNES header
+                    if (currentRomData[0] !== 0x4E || currentRomData[1] !== 0x45 || 
+                        currentRomData[2] !== 0x53 || currentRomData[3] !== 0x1A) {
+                        throw new Error('Invalid iNES ROM file format');
                     }
-                    emulateFrame();
+
+                    // Extract ROM info
+                    const prgSize = currentRomData[4] * 16384;
+                    const chrSize = currentRomData[5] * 8192;
+                    const flags6 = currentRomData[6];
+                    const mapper = ((flags6 & 0xF0) >> 4) | ((currentRomData[7] & 0xF0));
+
+                    console.log(`ROM Info: PRG=${prgSize}KB, CHR=${chrSize}KB, Mapper=${mapper}`);
+
+                    // Reset emulator and load ROM
+                    cpu = new CPU6502();
+                    ppu = new PPU();
+                    cpu.loadROM(currentRomData);
+                    
+                    romLoaded = true;
+                    setStatus('✅ ROM loaded successfully! Press "Load & Start" to begin emulation.');
+                    loadButton.textContent = 'Load & Start';
+
                 } catch (e) {
                     console.error('Failed to load ROM:', e);
-                    status.textContent = 'Status: Failed to load ROM! See console for errors.';
+                    romLoaded = false;
+                    setStatus(`Failed to load ROM: ${e.message}`, true);
+                    romNameDiv.textContent = '';
                 }
+            };
+
+            reader.onerror = () => {
+                setStatus('Error: Failed to read file!', true);
+                romNameDiv.textContent = '';
             };
 
             reader.readAsArrayBuffer(file);
         });
+
+        pauseButton.addEventListener('click', pauseEmulation);
+        resetButton.addEventListener('click', resetEmulation);
+
+        // Allow drag and drop
+        canvas.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            canvas.style.opacity = '0.7';
+        });
+
+        canvas.addEventListener('dragleave', () => {
+            canvas.style.opacity = '1';
+        });
+
+        canvas.addEventListener('drop', (e) => {
+            e.preventDefault();
+            canvas.style.opacity = '1';
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                romFileInput.files = files;
+                loadButton.click();
+            }
+        });
+
+        setStatus('Ready! Select a .nes ROM file to begin.');
     </script>
 </body>
 </html>
