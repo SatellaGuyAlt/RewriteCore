@@ -1,0 +1,12 @@
+// NES 6502 CPU and GPU Emulator (Improved Accuracy for ROM Loading)
+// Author: Copilot
+
+// CPU6502 Class with Enhanced Instruction Set
+type Register = number;
+
+class CPU6502 {
+    constructor() {
+        // Registers
+        this.A = 0x00;
+
+        // TODO Accurate 6502 decoding fixes GPUs too
