@@ -64,18 +64,46 @@ class CPU6502 {
     }
 }
 
+// PPU (Picture Processing Unit) Implementation
+class PPU {
+    constructor() {
+        this.vram = new Uint8Array(0x4000); // VRAM (Video RAM)
+        this.oam = new Uint8Array(256);     // Object Attribute Memory (Sprites)
+        this.registers = {
+            PPUCTRL: 0x00,   // Control Register
+            PPUMASK: 0x00,   // Mask Register
+            PPUSTATUS: 0xA0, // Status Register
+            OAMADDR: 0x00,   // OAM Address
+            OAMDATA: 0x00,   // OAM Data
+            PPUSCROLL: 0x00, // Scroll Position
+            PPUADDR: 0x00,   // Address Register
+            PPUDATA: 0x00    // Data Register
+        };
+    }
+
+    renderScanline(scanline) {
+        // Simulated rendering of a scanline
+    }
+
+    step() {
+        // PPU rendering cycle logic (placeholder)
+    }
+}
+
 // Example usage
 const cpu = new CPU6502();
+const ppu = new PPU();
 const program = new Uint8Array([0xA9, 0x01, 0x00]); // LDA #$01; BRK
 cpu.loadProgram(program);
 
 while (true) {
     try {
         cpu.step();
+        ppu.step();
     } catch (e) {
         console.log('Program completed.');
         break;
     }
 }
 
-module.exports = CPU6502;
+module.exports = { CPU6502, PPU };
