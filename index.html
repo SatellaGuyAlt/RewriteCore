@@ -18,21 +18,22 @@
     <div style="text-align: center;">
         <input type="file" id="romFile" accept=".nes">
         <button id="loadButton">Load ROM</button>
+        <p id="status">Status: Waiting for ROM...</p>
     </div>
 
     <script type="module">
-        import { CPU6502, PPU } from './6502.js';
+        import CPU6502 from './6502.js';
 
         const canvas = document.getElementById('screen');
         const context = canvas.getContext('2d');
         const imageData = context.getImageData(0, 0, 256, 240);
         const pixels = new Uint32Array(imageData.data.buffer);
+        const status = document.getElementById('status');
 
         const cpu = new CPU6502();
-        const ppu = new PPU();
 
         function renderScreen() {
-            // Example of rendering. Replace with actual PPU rendering.
+            // Example rendering logic (replace with actual PPU rendering logic)
             for (let y = 0; y < 240; y++) {
                 for (let x = 0; x < 256; x++) {
                     const color = Math.random() > 0.5 ? 0xFFFFFFFF : 0xFF000000; // White or black
@@ -53,24 +54,30 @@
 
             const reader = new FileReader();
             reader.onload = () => {
-                const romData = new Uint8Array(reader.result);
-                cpu.loadProgram(romData);
-                console.log('ROM loaded and CPU initialized.');
+                try {
+                    const romData = new Uint8Array(reader.result);
+                    cpu.loadROM(romData);
+                    status.textContent = 'Status: ROM loaded successfully!';
 
-                function emulateFrame() {
-                    try {
-                        for (let i = 0; i < 29781; i++) { // ~29780 cycles per frame
-                            cpu.step();
-                            ppu.step();
+                    console.log('ROM loaded, starting emulation.');
+
+                    function emulateFrame() {
+                        try {
+                            for (let i = 0; i < 29781; i++) { // ~29780 cycles per frame
+                                cpu.step();
+                            }
+                            renderScreen();
+                            requestAnimationFrame(emulateFrame);
+                        } catch (e) {
+                            console.error('Emulation error:', e);
+                            status.textContent = 'Status: Emulation error! Check console for details.';
                         }
-                        renderScreen();
-                        requestAnimationFrame(emulateFrame);
-                    } catch (e) {
-                        console.error('Emulation error:', e);
                     }
+                    emulateFrame();
+                } catch (e) {
+                    console.error('Failed to load ROM:', e);
+                    status.textContent = 'Status: Failed to load ROM! See console for errors.';
                 }
-
-                emulateFrame();
             };
 
             reader.readAsArrayBuffer(file);
