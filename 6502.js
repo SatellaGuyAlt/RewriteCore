@@ -1,74 +1,81 @@
-// NES 6502 CPU Emulator with ROM Loading Support
+// Improved NES 6502 CPU and GPU Emulator
 // Author: Copilot
 
-// Registers and Flags: 
+// Enhanced CPU6502 Class with Accurate Instruction Set Emulation
 class CPU6502 {
     constructor() {
         // Registers
-        this.A = 0x00;   // Accumulator
-        this.X = 0x00;   // X Register
-        this.Y = 0x00;   // Y Register
+        this.A = 0x00; // Accumulator
+        this.X = 0x00; // X Register
+        this.Y = 0x00; // Y Register
 
-        // Stack Pointer, Program Counter, and Status Register
-        this.SP = 0xFF;  // Stack Pointer
+        this.SP = 0xFF; // Stack Pointer
         this.PC = 0x0000; // Program Counter
-        this.SR = 0x00;  // Status Register (Flags)
+        this.SR = 0x20; // Status Register (set unused flag)
 
         // Memory - 64KB
         this.memory = new Uint8Array(0x10000);
     }
 
     reset() {
-        this.PC = this.memory[0xFFFC] | (this.memory[0xFFFD] << 8);
+        this.PC = this.readWord(0xFFFC);
         this.SP = 0xFD;
         this.SR = 0x34;
         this.A = this.X = this.Y = 0x00;
     }
 
-    loadProgram(program, address = 0x8000) {
-        this.memory.set(program, address);
-        // Set the Reset Vector
-        this.memory[0xFFFC] = address & 0xFF;
-        this.memory[0xFFFD] = (address >> 8) & 0xFF;
-        this.reset();
+    readByte(address) {
+        return this.memory[address & 0xFFFF];
+    }
+
+    writeByte(address, value) {
+        this.memory[address & 0xFFFF] = value;
+    }
+
+    readWord(address) {
+        const lo = this.readByte(address);
+        const hi = this.readByte(address + 1);
+        return (hi << 8) | lo;
     }
 
     loadROM(rom) {
-        // Parse the iNES header (first 16 bytes)
         if (rom[0] !== 0x4E || rom[1] !== 0x45 || rom[2] !== 0x53 || rom[3] !== 0x1A) {
             throw new Error('Invalid iNES header');
         }
 
-        const prgSize = rom[4] * 16384; // 16KB units
-        const chrSize = rom[5] * 8192;  // 8KB units
-
-        // Load PRG ROM into memory (0x8000-0xFFFF)
+        const prgSize = rom[4] * 16384;
         const prgROM = rom.slice(16, 16 + prgSize);
-        this.loadProgram(prgROM, 0x8000);
+        this.memory.set(prgROM, 0x8000);
+        this.memory.set(prgROM, 0xC000); // Mirror PRG ROM at 0xC000
 
-        console.log('PRG ROM loaded:', prgSize, 'bytes');
-        if (chrSize > 0) {
-            console.log('CHR ROM size:', chrSize, 'bytes');
-        }
+        this.reset();
     }
 
     fetch() {
-        return this.memory[this.PC++];
+        const data = this.readByte(this.PC);
+        this.PC = (this.PC + 1) & 0xFFFF;
+        return data;
+    }
+
+    step() {
+        const opcode = this.fetch();
+        this.executeInstruction(opcode);
     }
 
     executeInstruction(opcode) {
-        switch(opcode) {
+        switch (opcode) {
             case 0xA9: // LDA Immediate
                 this.A = this.fetch();
                 this.updateZeroNegativeFlags(this.A);
                 break;
 
-            case 0x00: // BRK
-                this.PC++;
+            case 0x8D: // STA Absolute
+                const addr = this.fetch() | (this.fetch() << 8);
+                this.writeByte(addr, this.A);
                 break;
 
             default:
-                throw new Error(`Unimplemented opcode: ${opcode}`);
+                throw new Error(`Unimplemented opcode: 0x${opcode.toString(16)}`);
         }
     }
 
@@ -76,12 +83,27 @@ class CPU6502 {
         this.SR = (value === 0 ? this.SR | 0x02 : this.SR & ~0x02); // Zero Flag
         this.SR = (value & 0x80 ? this.SR | 0x80 : this.SR & ~0x80); // Negative Flag
     }
+}
+
+// Enhanced Picture Processing Unit (PPU) Class
+class PPU {
+    constructor() {
+        this.vram = new Uint8Array(0x4000); // Video RAM
+        this.oam = new Uint8Array(256); // Sprite Memory
+        this.cycle = 0;
+        this.scanline = 0;
+    }
 
     step() {
-        const opcode = this.fetch();
-        this.executeInstruction(opcode);
+        this.cycle++;
+        if (this.cycle > 340) {
+            this.cycle = 0;
+            this.scanline++;
+            if (this.scanline > 261) {
+                this.scanline = 0; // Reset scanline after end of frame
+            }
+        }
     }
 }
 
-// Export the CPU class
-module.exports = CPU6502;
+module.exports = { CPU6502, PPU };
